@@ -39,5 +39,8 @@ services:
       # - /mnt/sdcard:/mnt/sdcard          # Linux
       # - D:/backups:/mnt/d                 # Windows host folder
 
+      - /media:/media:rslave
+      - /mnt:/mnt:rslave
+
 volumes:
   backuptool-data:
