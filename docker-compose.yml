@@ -5,15 +5,17 @@ services:
     # image: ghcr.io/youruser/backuptool:latest
     container_name: backuptool
     restart: unless-stopped
+    # Change the port by setting PORT in your .env (default 8723).
     ports:
-      - "3000:3000"
+      - "${PORT:-8723}:${PORT:-8723}"
     environment:
+      PORT: ${PORT:-8723}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-please}
       APP_SECRET: ${APP_SECRET:-please-generate-a-long-random-secret}
       DATA_DIR: /data
       BACKUP_DIR: /backups
       DOCKER_SOCKET: /var/run/docker.sock
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      APP_URL: ${APP_URL:-http://localhost:8723}
       # Optional cloud OAuth (leave blank to disable)
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}

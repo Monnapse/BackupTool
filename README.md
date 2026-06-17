@@ -35,7 +35,12 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Open http://localhost:3000 and sign in with `ADMIN_PASSWORD`.
+Open http://localhost:8723 and sign in with `ADMIN_PASSWORD`.
+
+> **Changing the port** — set `PORT` in your `.env` (default `8723`). It drives
+> both the published host port and the in-container port, so that's the only
+> place you need to change it. If you use cloud destinations, also update
+> `APP_URL` to match.
 
 Then:
 1. **Destinations → Add destination** — add a *Local / Drive* pointing at
