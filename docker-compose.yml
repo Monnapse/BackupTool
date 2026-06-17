@@ -1,0 +1,32 @@
+services:
+  backuptool:
+    build: .
+    # Or use a prebuilt image once you publish one:
+    # image: ghcr.io/youruser/backuptool:latest
+    container_name: backuptool
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-please}
+      APP_SECRET: ${APP_SECRET:-please-generate-a-long-random-secret}
+      DATA_DIR: /data
+      BACKUP_DIR: /backups
+      DOCKER_SOCKET: /var/run/docker.sock
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      # Optional cloud OAuth (leave blank to disable)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      DROPBOX_CLIENT_ID: ${DROPBOX_CLIENT_ID:-}
+      DROPBOX_CLIENT_SECRET: ${DROPBOX_CLIENT_SECRET:-}
+    volumes:
+      # Lets BackupTool see and exec into your other containers.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Persists the config database across restarts.
+      - backuptool-data:/data
+      # Your backup target — point this at your SD card / USB / network mount.
+      # Linux example: /mnt/sdcard   Windows example: C:/backups
+      - ./backups:/backups
+
+volumes:
+  backuptool-data:
