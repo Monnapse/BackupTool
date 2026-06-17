@@ -32,13 +32,23 @@ export function parseTargetBody(
 
 /** Strip secrets from a destination; expose only what the UI needs. */
 export function publicDestination(d: Destination) {
-  const connected = d.kind === "local" ? true : Boolean((d.config as any).refresh_token);
+  const c = d.config as any;
+  const connected = d.kind === "local" ? true : Boolean(c.refresh_token);
+  const folder =
+    d.kind === "gdrive"
+      ? c.rootFolderName || (c.rootFolderId ? "(selected folder)" : "")
+      : d.kind === "dropbox"
+        ? c.basePath || ""
+        : undefined;
   return {
     id: d.id,
     name: d.name,
     kind: d.kind,
     connected,
-    path: d.kind === "local" ? (d.config as any).path || "" : undefined,
+    // Cloud: whether OAuth app credentials have been entered (no secrets exposed).
+    hasCreds: d.kind === "local" ? true : Boolean(c.clientId && c.clientSecret),
+    folder,
+    path: d.kind === "local" ? c.path || "" : undefined,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   };

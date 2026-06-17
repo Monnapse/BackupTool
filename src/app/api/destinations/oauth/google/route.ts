@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       access_type: "offline",
       prompt: "consent", // force a refresh_token every time
       scope: ["https://www.googleapis.com/auth/drive.file"],
-      state: destId,
+      state: dest.id,
     });
     return NextResponse.redirect(url);
   } catch (e: any) {

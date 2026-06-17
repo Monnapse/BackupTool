@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { listDrives } from "@/lib/fs-browse";
-import { homeDir } from "@/lib/fs-browse";
+import { listDrives, homeDir } from "@/lib/fs-browse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

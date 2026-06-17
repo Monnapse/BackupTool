@@ -22,8 +22,15 @@ export async function POST(req: Request) {
     if (b.kind === "local") {
       if (!b.path) throw new Error("path is required for a local destination");
       config.path = String(b.path);
+    } else {
+      // Cloud: the OAuth app credentials are entered in the UI and stored
+      // (encrypted). The refresh token + folder are added later via Connect.
+      if (!b.clientId || !b.clientSecret) {
+        throw new Error("Client ID and Client Secret are required to link this account.");
+      }
+      config.clientId = String(b.clientId);
+      config.clientSecret = String(b.clientSecret);
     }
-    // Cloud destinations start unconnected; tokens are added via the OAuth flow.
     const dest = createDestination({ name: String(b.name), kind: b.kind, config });
     return NextResponse.json({ destination: publicDestination(dest) }, { status: 201 });
   } catch (e: any) {

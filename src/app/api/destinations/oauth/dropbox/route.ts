@@ -24,6 +24,6 @@ export async function GET(req: Request) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", redirect);
   url.searchParams.set("token_access_type", "offline");
-  url.searchParams.set("state", destId);
+  url.searchParams.set("state", dest.id);
   return NextResponse.redirect(url.toString());
 }

@@ -26,9 +26,18 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Persists the config database across restarts.
       - backuptool-data:/data
-      # Your backup target — point this at your SD card / USB / network mount.
-      # Linux example: /mnt/sdcard   Windows example: C:/backups
+      # A default backup folder.
       - ./backups:/backups
+      # --- Make your drives show up in the in-app drive picker ---
+      # Mount whatever disks/SD cards you want to back up to (read-write).
+      # On Linux, removable drives auto-mount under /media or /run/media, so
+      # mounting those parents makes SD cards/USB appear automatically:
+      # - /media:/media
+      # - /run/media:/run/media
+      # - /mnt:/mnt
+      # Or mount a specific drive directly:
+      # - /mnt/sdcard:/mnt/sdcard          # Linux
+      # - D:/backups:/mnt/d                 # Windows host folder
 
 volumes:
   backuptool-data:

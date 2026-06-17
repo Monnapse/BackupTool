@@ -20,7 +20,9 @@ Portainer / docker-compose.
 - **Rotation**: keep the newest *N* backups per job; older ones are pruned
   automatically. (Your "2 rotating hourly files" idea = `keep 2` + `Hourly`.)
 - **Multiple jobs**, each with its own container, destination, schedule.
-- **Destinations**: local/mounted drive, Google Drive, Dropbox (pluggable).
+- **Destinations**: local drive (with a built-in **drive/folder picker** that
+  shows each disk & SD card separately), plus Google Drive and Dropbox — all
+  linked from the website, with a live folder picker. No env editing for cloud.
 - **Password-protected** dashboard; stored credentials & tokens are encrypted
   at rest (AES-256-GCM).
 - Runs anywhere Docker does — Linux, Windows, macOS.
@@ -43,8 +45,8 @@ Open http://localhost:8723 and sign in with `ADMIN_PASSWORD`.
 > `APP_URL` to match.
 
 Then:
-1. **Destinations → Add destination** — add a *Local / Drive* pointing at
-   `/backups` (which is mapped to your SD card / USB in `docker-compose.yml`).
+1. **Destinations → Add destination** — choose *Local / Drive* and **browse your
+   drives** to pick a folder (see below), or link *Google Drive* / *Dropbox*.
 2. **Backup Jobs → New job** — pick a container; type and credentials are
    auto-filled when detectable. Choose the destination, a schedule, and how many
    backups to keep. **Run now** to test immediately.
@@ -53,21 +55,37 @@ Then:
 
 Use **Stacks → Add stack**, paste the contents of `docker-compose.yml`, set the
 environment variables, and deploy. Make sure the Docker socket volume and your
-backup drive mount are present.
+backup drive mounts are present.
 
-## Connecting your backup drive (SD card / USB)
+## Picking a drive (SD card / USB / disk)
 
-Edit the `volumes` mapping in `docker-compose.yml`:
+When you add a *Local / Drive* destination, the dashboard shows a **drive picker**
+that lists every disk/mount the app can see — each with its free space — and lets
+you browse into a folder (or create one). Your hard drive and your SD card show
+up as separate entries.
+
+The catch with Docker: a container only sees drives that are **mounted into it**.
+So mount the disks you want to back up to in `docker-compose.yml`, and they'll
+appear in the picker. On Linux, removable drives auto-mount under `/media` or
+`/run/media`, so mounting those parents makes SD cards/USB sticks appear
+automatically:
 
 ```yaml
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - backuptool-data:/data
-      - /mnt/sdcard:/backups        # Linux: your mounted SD card
-      # - C:/backups:/backups       # Windows: a host folder
+      - ./backups:/backups
+      - /media:/media          # Linux: SD cards / USB auto-mount here
+      - /mnt:/mnt              # or your own mount points
+      # - /mnt/sdcard:/mnt/sdcard   # a specific drive
+      # - D:/backups:/mnt/d         # a Windows host folder
 ```
 
-Whatever you map to `/backups` is what the *Local / Drive* destination writes to.
+Running the app **natively** (not in Docker) on Windows/Linux, it sees your real
+drive letters / mounts directly — no mounting needed.
+
+> Set `FS_BROWSE_ROOT` to restrict the picker to a single path if you'd rather
+> not expose the whole filesystem to the dashboard.
 
 ## Talking to Docker
 
@@ -79,21 +97,27 @@ Whatever you map to `/backups` is what the *Local / Drive* destination writes to
 The dumps themselves run **inside each target container**, so this app doesn't
 need any database client tools installed — just access to the Docker daemon.
 
-## Cloud destinations (optional)
+## Cloud destinations (linked in the website — no env needed)
 
-Google Drive and Dropbox use OAuth, so you supply your own app credentials:
+Google Drive and Dropbox are set up **entirely in the dashboard** — you don't
+touch any env vars. The one unavoidable step is creating an OAuth app once (this
+is how Google/Dropbox require third-party apps to access an account):
 
-- **Google Drive** — create an *OAuth 2.0 Client ID* (Web application) in the
-  Google Cloud Console. Add redirect URI
-  `<APP_URL>/api/destinations/oauth/google/callback`. Put the client id/secret
-  in `.env`.
-- **Dropbox** — create a scoped app at
-  https://www.dropbox.com/developers/apps with the `files.content.write` and
-  `files.content.read` scopes and redirect URI
-  `<APP_URL>/api/destinations/oauth/dropbox/callback`.
+1. **Add destination → Google Drive / Dropbox.** The form shows the exact
+   **redirect URI** to register — copy it.
+2. Create the OAuth app and paste its **Client ID/Secret** (Google) or
+   **App key/secret** (Dropbox) into the form, then **Create**.
+   - **Google** — *APIs & Services → Credentials → OAuth client ID*, type
+     *Web application*; add the redirect URI shown.
+   - **Dropbox** — https://www.dropbox.com/developers/apps, scoped app with the
+     `files.content.write` + `files.content.read` scopes; add the redirect URI.
+3. On the destination card click **Link account** and sign in.
+4. Click **Choose folder** and pick where backups go — each job gets its own
+   subfolder inside it.
 
-Then add the destination in the UI and click **Connect** to authorize. Tokens
-are stored encrypted.
+Make sure `APP_URL` matches how you actually reach the app (e.g.
+`http://192.168.1.50:8723`), since the redirect URI is built from it. Credentials
+and tokens are stored encrypted.
 
 ## Local development
 
