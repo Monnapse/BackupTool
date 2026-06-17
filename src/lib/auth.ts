@@ -33,7 +33,10 @@ export async function createSession(): Promise<void> {
   cookies().set(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // Self-hosted tools are usually reached over plain HTTP on a LAN. A `secure`
+    // cookie would be dropped by the browser on http://, causing an endless
+    // login bounce. Only require HTTPS when explicitly opted in.
+    secure: process.env.COOKIE_SECURE === "true",
     path: "/",
     maxAge: MAX_AGE,
   });
