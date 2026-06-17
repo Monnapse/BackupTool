@@ -4,24 +4,41 @@ import type { Destination } from "../types";
 import type { StoredArtifact } from "./index";
 
 // Dropbox destination.
-// config: { refresh_token: string }
-// App key/secret come from env (DROPBOX_CLIENT_ID/SECRET). The SDK refreshes
-// the short-lived access token automatically using the refresh token.
-
-const ROOT = "/BackupTool";
+// config: { clientId, clientSecret, refresh_token, basePath? }
+// App key/secret are entered per-destination in the UI (falling back to
+// DROPBOX_CLIENT_ID/SECRET env). The SDK refreshes the short-lived access token
+// automatically using the refresh token.
 
 function dbx(dest: Destination): Dropbox {
   const refresh = dest.config.refresh_token as string;
   if (!refresh) throw new Error("Dropbox destination is not connected.");
   return new Dropbox({
-    clientId: process.env.DROPBOX_CLIENT_ID,
-    clientSecret: process.env.DROPBOX_CLIENT_SECRET,
+    clientId: (dest.config.clientId as string) || process.env.DROPBOX_CLIENT_ID,
+    clientSecret: (dest.config.clientSecret as string) || process.env.DROPBOX_CLIENT_SECRET,
     refreshToken: refresh,
   });
 }
 
-function folderPath(targetId: string): string {
-  return `${ROOT}/${targetId}`;
+/** Base folder chosen by the user (default /BackupTool). */
+function root(dest: Destination): string {
+  const p = ((dest.config.basePath as string) || "/BackupTool").replace(/\/+$/, "");
+  return p.startsWith("/") ? p : `/${p}`;
+}
+
+function folderPath(dest: Destination, targetId: string): string {
+  return `${root(dest)}/${targetId}`;
+}
+
+/** List subfolders under a path for the folder picker ("" => account root). */
+export async function listFolders(
+  dest: Destination,
+  path = ""
+): Promise<{ path: string; name: string }[]> {
+  const client = dbx(dest);
+  const res = await client.filesListFolder({ path: path || "" });
+  return res.result.entries
+    .filter((e) => e[".tag"] === "folder")
+    .map((e: any) => ({ path: e.path_lower, name: e.name }));
 }
 
 export async function upload(
@@ -31,7 +48,7 @@ export async function upload(
   data: Readable
 ): Promise<{ ref: string; size: number }> {
   const client = dbx(dest);
-  const path = `${folderPath(targetId)}/${filename}`;
+  const path = `${folderPath(dest, targetId)}/${filename}`;
   const CHUNK = 8 * 1024 * 1024; // 8MB
 
   // Read whole stream into memory in 8MB increments via an upload session.
@@ -81,7 +98,7 @@ export async function list(
 ): Promise<StoredArtifact[]> {
   const client = dbx(dest);
   try {
-    const res = await client.filesListFolder({ path: folderPath(targetId) });
+    const res = await client.filesListFolder({ path: folderPath(dest, targetId) });
     return res.result.entries
       .filter((e) => e[".tag"] === "file")
       .map((e: any) => ({

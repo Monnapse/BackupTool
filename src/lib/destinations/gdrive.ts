@@ -4,26 +4,56 @@ import type { Destination } from "../types";
 import type { StoredArtifact } from "./index";
 
 // Google Drive destination.
-// config: { refresh_token: string, rootFolderId?: string }
-// OAuth client id/secret come from env (GOOGLE_CLIENT_ID/SECRET). The connect
-// flow lives in /api/destinations/oauth/google.
+// config: { clientId, clientSecret, refresh_token, rootFolderId?, rootFolderName? }
+// OAuth client id/secret are entered per-destination in the UI (falling back to
+// GOOGLE_CLIENT_ID/SECRET env if present). The connect flow lives in
+// /api/destinations/oauth/google.
 
-export function oauthClient() {
-  const id = process.env.GOOGLE_CLIENT_ID;
-  const secret = process.env.GOOGLE_CLIENT_SECRET;
+export function redirectUri(): string {
+  const base = (process.env.APP_URL || "http://localhost:8723").replace(/\/$/, "");
+  return `${base}/api/destinations/oauth/google/callback`;
+}
+
+/** Build an OAuth2 client from explicit creds, or fall back to env. */
+export function oauthClient(creds?: { clientId?: string; clientSecret?: string }) {
+  const id = creds?.clientId || process.env.GOOGLE_CLIENT_ID;
+  const secret = creds?.clientSecret || process.env.GOOGLE_CLIENT_SECRET;
   if (!id || !secret) {
-    throw new Error("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not configured.");
+    throw new Error("Google client ID/secret are not set for this destination.");
   }
-  const base = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
-  return new google.auth.OAuth2(id, secret, `${base}/api/destinations/oauth/google/callback`);
+  return new google.auth.OAuth2(id, secret, redirectUri());
+}
+
+function clientForDest(dest: Destination) {
+  return oauthClient({
+    clientId: dest.config.clientId as string,
+    clientSecret: dest.config.clientSecret as string,
+  });
 }
 
 function driveFor(dest: Destination): drive_v3.Drive {
   const refresh = dest.config.refresh_token as string;
   if (!refresh) throw new Error("Google Drive destination is not connected.");
-  const client = oauthClient();
+  const client = clientForDest(dest);
   client.setCredentials({ refresh_token: refresh });
   return google.drive({ version: "v3", auth: client });
+}
+
+/** List folders under a parent (default: My Drive root) for the folder picker. */
+export async function listFolders(
+  dest: Destination,
+  parentId?: string
+): Promise<{ id: string; name: string }[]> {
+  const drive = driveFor(dest);
+  const parent = parentId || "root";
+  const res = await drive.files.list({
+    q: `'${parent}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: "files(id, name)",
+    orderBy: "name",
+    pageSize: 1000,
+    spaces: "drive",
+  });
+  return (res.data.files || []).map((f) => ({ id: f.id!, name: f.name || f.id! }));
 }
 
 async function ensureFolder(

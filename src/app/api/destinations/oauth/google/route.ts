@@ -9,11 +9,15 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const destId = searchParams.get("destId");
-  if (!destId || !getDestination(destId)) {
+  const dest = destId ? getDestination(destId) : null;
+  if (!dest) {
     return NextResponse.json({ error: "unknown destination" }, { status: 400 });
   }
   try {
-    const client = oauthClient();
+    const client = oauthClient({
+      clientId: dest.config.clientId as string,
+      clientSecret: dest.config.clientSecret as string,
+    });
     const url = client.generateAuthUrl({
       access_type: "offline",
       prompt: "consent", // force a refresh_token every time

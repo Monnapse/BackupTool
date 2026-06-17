@@ -19,7 +19,10 @@ export async function GET(req: Request) {
   if (!dest) return back(req, "error=unknown_destination");
 
   try {
-    const client = oauthClient();
+    const client = oauthClient({
+      clientId: dest.config.clientId as string,
+      clientSecret: dest.config.clientSecret as string,
+    });
     const { tokens } = await client.getToken(code);
     if (!tokens.refresh_token) {
       return back(req, "error=no_refresh_token");

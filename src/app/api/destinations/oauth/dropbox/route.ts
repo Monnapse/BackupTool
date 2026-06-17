@@ -8,14 +8,15 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const destId = searchParams.get("destId");
-  if (!destId || !getDestination(destId)) {
+  const dest = destId ? getDestination(destId) : null;
+  if (!dest) {
     return NextResponse.json({ error: "unknown destination" }, { status: 400 });
   }
-  const clientId = process.env.DROPBOX_CLIENT_ID;
+  const clientId = (dest.config.clientId as string) || process.env.DROPBOX_CLIENT_ID;
   if (!clientId) {
-    return NextResponse.json({ error: "DROPBOX_CLIENT_ID not configured" }, { status: 500 });
+    return NextResponse.json({ error: "Dropbox app key not set for this destination" }, { status: 400 });
   }
-  const base = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const base = (process.env.APP_URL || "http://localhost:8723").replace(/\/$/, "");
   const redirect = `${base}/api/destinations/oauth/dropbox/callback`;
 
   const url = new URL("https://www.dropbox.com/oauth2/authorize");

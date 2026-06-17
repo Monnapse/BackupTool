@@ -17,11 +17,11 @@ export async function GET(req: Request) {
   const dest = getDestination(destId);
   if (!dest) return back(req, "error=unknown_destination");
 
-  const clientId = process.env.DROPBOX_CLIENT_ID;
-  const clientSecret = process.env.DROPBOX_CLIENT_SECRET;
+  const clientId = (dest.config.clientId as string) || process.env.DROPBOX_CLIENT_ID;
+  const clientSecret = (dest.config.clientSecret as string) || process.env.DROPBOX_CLIENT_SECRET;
   if (!clientId || !clientSecret) return back(req, "error=not_configured");
 
-  const base = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const base = (process.env.APP_URL || "http://localhost:8723").replace(/\/$/, "");
   const redirect = `${base}/api/destinations/oauth/dropbox/callback`;
 
   try {
