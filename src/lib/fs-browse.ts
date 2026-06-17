@@ -63,13 +63,46 @@ function listWindowsDrives(): DriveInfo[] {
   return out;
 }
 
+// Filesystems that aren't real storage and should never appear as a "drive".
+const PSEUDO_FS = new Set([
+  "proc", "sysfs", "tmpfs", "devtmpfs", "devpts", "mqueue", "cgroup", "cgroup2",
+  "securityfs", "debugfs", "tracefs", "fusectl", "configfs", "binfmt_misc",
+  "hugetlbfs", "pstore", "bpf", "autofs", "nsfs", "ramfs", "fuse.lxcfs",
+]);
+
+function isDir(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** A path is a real mount if its device differs from its parent's. */
+function isMountpoint(p: string): boolean {
+  try {
+    return fs.statSync(p).dev !== fs.statSync(path.dirname(p)).dev;
+  } catch {
+    return false;
+  }
+}
+
+/** System paths that aren't useful backup targets. */
+function isSystemPath(p: string): boolean {
+  if (["/proc", "/sys", "/dev", "/etc", "/run"].some((s) => p === s || p.startsWith(s + "/"))) {
+    return !p.startsWith("/run/media"); // keep removable mounts under /run/media
+  }
+  return false;
+}
+
 function listUnixMounts(): DriveInfo[] {
   const out: DriveInfo[] = [];
   const seen = new Set<string>();
+  const dataDir = process.env.DATA_DIR; // app's own config dir — not a backup target
 
   const add = (mountPath: string, type: DriveInfo["type"]) => {
-    if (seen.has(mountPath)) return;
-    if (!fs.existsSync(mountPath)) return;
+    if (seen.has(mountPath) || mountPath === dataDir) return;
+    if (!isDir(mountPath)) return; // skip Docker's injected file mounts (resolv.conf, etc.)
     seen.add(mountPath);
     const { total, free } = sizeOf(mountPath);
     out.push({
@@ -81,27 +114,39 @@ function listUnixMounts(): DriveInfo[] {
     });
   };
 
-  // Real, mounted block devices from /proc/mounts (Linux).
+  // Real mounted filesystems from /proc/mounts (Linux).
   try {
     const mounts = fs.readFileSync("/proc/mounts", "utf8").trim().split("\n");
     for (const line of mounts) {
-      const [dev, mntRaw] = line.split(" ");
-      if (!dev?.startsWith("/dev/")) continue; // skip pseudo filesystems
+      const [, mntRaw, fstype] = line.split(" ");
+      if (!mntRaw || PSEUDO_FS.has(fstype)) continue;
       const mnt = unescapeMount(mntRaw);
+      if (mnt !== "/" && isSystemPath(mnt)) continue;
       const removable = /^\/(media|mnt|run\/media)\b/.test(mnt);
-      add(mnt, removable ? "removable" : "mount");
+      add(mnt, mnt === "/" ? "fixed" : removable ? "removable" : "mount");
     }
   } catch {
     // not Linux, or no /proc — fall through to scanned roots below
   }
 
-  // Common removable-mount parents (in case the child wasn't a block device,
-  // e.g. bind-mounted into the container).
+  // Removable drives that auto-mount under these parents. Only count entries
+  // that are genuinely mounted (a real device), not empty placeholder folders.
   for (const base of ["/media", "/run/media", "/mnt", "/Volumes"]) {
     try {
       for (const name of fs.readdirSync(base)) {
         const full = path.join(base, name);
-        if (fs.statSync(full).isDirectory()) add(full, "removable");
+        // /run/media nests one level deeper: /run/media/<user>/<label>
+        if (isMountpoint(full)) add(full, "removable");
+        else if (isDir(full)) {
+          try {
+            for (const sub of fs.readdirSync(full)) {
+              const subFull = path.join(full, sub);
+              if (isMountpoint(subFull)) add(subFull, "removable");
+            }
+          } catch {
+            /* ignore */
+          }
+        }
       }
     } catch {
       /* base doesn't exist */

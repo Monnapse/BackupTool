@@ -55,6 +55,19 @@ export function FolderBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Poll so drives appear/disappear live as you plug/unplug them.
+  useEffect(() => {
+    const t = setInterval(async () => {
+      try {
+        const d = await api("/api/fs/drives");
+        setDrives(d.drives);
+      } catch {
+        /* ignore transient errors */
+      }
+    }, 4000);
+    return () => clearInterval(t);
+  }, []);
+
   async function open(path: string) {
     setError("");
     try {
@@ -88,7 +101,12 @@ export function FolderBrowser({
   return (
     <div className="space-y-3">
       <div>
-        <label className="label">Drives & mounts</label>
+        <label className="label flex items-center gap-1.5">
+          Drives &amp; mounts
+          <span className="inline-flex items-center gap-1 text-[10px] font-normal normal-case tracking-normal text-success">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> live
+          </span>
+        </label>
         <div className="flex flex-wrap gap-2">
           {drives.map((d) => {
             const active = listing?.path === d.path || (!listing && value === d.path);
