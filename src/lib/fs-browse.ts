@@ -123,8 +123,11 @@ function listUnixMounts(): DriveInfo[] {
   try {
     const mounts = fs.readFileSync("/proc/mounts", "utf8").trim().split("\n");
     for (const line of mounts) {
-      const [, mntRaw, fstype] = line.split(" ");
+      const [dev, mntRaw, fstype] = line.split(" ");
       if (!mntRaw || PSEUDO_FS.has(fstype)) continue;
+      // Drop stale mounts: a drive unplugged without unmounting leaves its entry
+      // in /proc/mounts, but its /dev node is gone. Hide it so it disappears.
+      if (dev.startsWith("/dev/") && !fs.existsSync(dev)) continue;
       const mnt = unescapeMount(mntRaw);
       if (isSystemPath(mnt)) continue;
       const removable = /^\/(media|mnt|run\/media)\b/.test(mnt);
