@@ -26,21 +26,22 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Persists the config database across restarts.
       - backuptool-data:/data
-      # A default backup folder.
+      # A default backup folder (lives on the host's internal disk).
       - ./backups:/backups
-      # --- Make your drives show up in the in-app drive picker ---
-      # Mount whatever disks/SD cards you want to back up to (read-write).
-      # On Linux, removable drives auto-mount under /media or /run/media, so
-      # mounting those parents makes SD cards/USB appear automatically:
-      - /media:/media
-      - /run/media:/run/media
-      - /mnt:/mnt
-      # Or mount a specific drive directly:
-      # - /mnt/sdcard:/mnt/sdcard          # Linux
-      # - D:/backups:/mnt/d                 # Windows host folder
 
-      #- /media:/media:rslave
-      #- /mnt:/mnt:rslave
+      # ── Auto-scan drives (Linux host) ──────────────────────────────────────
+      # Mount the parent dir where the host auto-mounts removable drives, with
+      # "rslave" propagation so drives plugged in LATER appear automatically in
+      # the picker — no per-drive config. Most distros use /media or /run/media.
+      - /media:/media:rslave
+      - /run/media:/run/media:rslave
+      #
+      # The host itself must auto-mount the drive (desktop distros do this via
+      # udisks2; on a headless server install `udiskie` or `usbmount`, or mount
+      # it manually). Plug the SD card into THIS Linux host, not your PC.
+      #
+      # Alternatively, pin specific drives explicitly:
+      #   - /mnt/sdcard:/mnt/sdcard:rslave
 
 volumes:
   backuptool-data:

@@ -95,6 +95,9 @@ function isSystemPath(p: string): boolean {
   return false;
 }
 
+// Bare mount-parent dirs — these hold drives, they aren't drives themselves.
+const PARENT_DIRS = new Set(["/media", "/run/media", "/mnt", "/Volumes"]);
+
 function listUnixMounts(): DriveInfo[] {
   const out: DriveInfo[] = [];
   const seen = new Set<string>();
@@ -102,28 +105,30 @@ function listUnixMounts(): DriveInfo[] {
 
   const add = (mountPath: string, type: DriveInfo["type"]) => {
     if (seen.has(mountPath) || mountPath === dataDir) return;
+    if (mountPath === "/" || PARENT_DIRS.has(mountPath)) return; // skip container internals
     if (!isDir(mountPath)) return; // skip Docker's injected file mounts (resolv.conf, etc.)
     seen.add(mountPath);
     const { total, free } = sizeOf(mountPath);
     out.push({
       path: mountPath,
-      label: mountPath === "/" ? "/ (root)" : path.basename(mountPath) || mountPath,
+      label: path.basename(mountPath) || mountPath,
       type,
       total,
       free,
     });
   };
 
-  // Real mounted filesystems from /proc/mounts (Linux).
+  // Real mounted filesystems from /proc/mounts (Linux). We only surface actual
+  // drives — not the container's overlay root or the bare /media,/mnt parents.
   try {
     const mounts = fs.readFileSync("/proc/mounts", "utf8").trim().split("\n");
     for (const line of mounts) {
       const [, mntRaw, fstype] = line.split(" ");
       if (!mntRaw || PSEUDO_FS.has(fstype)) continue;
       const mnt = unescapeMount(mntRaw);
-      if (mnt !== "/" && isSystemPath(mnt)) continue;
+      if (isSystemPath(mnt)) continue;
       const removable = /^\/(media|mnt|run\/media)\b/.test(mnt);
-      add(mnt, mnt === "/" ? "fixed" : removable ? "removable" : "mount");
+      add(mnt, removable ? "removable" : "mount");
     }
   } catch {
     // not Linux, or no /proc — fall through to scanned roots below
@@ -131,7 +136,7 @@ function listUnixMounts(): DriveInfo[] {
 
   // Removable drives that auto-mount under these parents. Only count entries
   // that are genuinely mounted (a real device), not empty placeholder folders.
-  for (const base of ["/media", "/run/media", "/mnt", "/Volumes"]) {
+  for (const base of PARENT_DIRS) {
     try {
       for (const name of fs.readdirSync(base)) {
         const full = path.join(base, name);
@@ -153,11 +158,36 @@ function listUnixMounts(): DriveInfo[] {
     }
   }
 
-  add("/", "fixed");
   return out;
 }
 
+/**
+ * Curated mode: if drives are mounted under DRIVES_DIR (default /drives), show
+ * EXACTLY those — one entry per subfolder. This is the reliable cross-platform
+ * way to expose specific drives (especially on Docker Desktop for Windows, where
+ * the container can't see Windows drive letters via /media). Each subfolder is a
+ * separate bind mount, so it reports that drive's real free space.
+ */
+function listCuratedDrives(): DriveInfo[] | null {
+  const root = process.env.DRIVES_DIR || "/drives";
+  let names: string[];
+  try {
+    names = fs.readdirSync(root).filter((n) => isDir(path.join(root, n)));
+  } catch {
+    return null; // /drives not mounted — use auto-detection
+  }
+  if (names.length === 0) return null;
+  return names.sort().map((name) => {
+    const p = path.join(root, name);
+    const { total, free } = sizeOf(p);
+    return { path: p, label: name, type: "removable", total, free };
+  });
+}
+
 export function listDrives(): DriveInfo[] {
+  const curated = listCuratedDrives();
+  if (curated) return curated;
+
   const drives = process.platform === "win32" ? listWindowsDrives() : listUnixMounts();
 
   // Always offer the app's configured default backup dir as a convenience entry.
