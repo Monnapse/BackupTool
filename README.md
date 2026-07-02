@@ -64,17 +64,19 @@ Use **Stacks → Add stack**, paste the contents of `docker-compose.yml`, set th
 environment variables, and deploy. Make sure the Docker socket volume and your
 backup drive mounts are present.
 
-## Picking a drive (SD card / USB / disk)
+## Picking a drive (SD card / microSD / USB / disk)
 
 When you add a *Local / Drive* destination, the dashboard shows a **drive picker**
-that lists every disk/mount the app can see — each with its free space — and lets
-you browse into a folder (or create one). Your hard drive and your SD card show
-up as separate entries.
+that lists every disk/mount the app can see — each with its free space — and
+updates live as drives are plugged in and out. SD/microSD cards in a built-in
+slot (e.g. a Raspberry Pi or laptop reader) are detected as such and shown with
+an SD-card icon; cards in a USB reader appear as removable drives. Either way
+they work identically.
 
 The catch with Docker: a container only sees drives that are **mounted into it**.
-So mount the disks you want to back up to in `docker-compose.yml`, and they'll
-appear in the picker. On Linux, removable drives auto-mount under `/media` or
-`/run/media`, so mounting those parents makes SD cards/USB sticks appear
+The bundled `docker-compose.yml` already mounts the three places Linux puts
+drives — `/media`, `/run/media` (auto-mounted USB/SD), and `/mnt` (manual
+mounts) — with `rslave` propagation, so anything you plug in later appears
 automatically:
 
 ```yaml
@@ -82,11 +84,16 @@ automatically:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - backuptool-data:/data
       - ./backups:/backups
-      - /media:/media          # Linux: SD cards / USB auto-mount here
-      - /mnt:/mnt              # or your own mount points
-      # - /mnt/sdcard:/mnt/sdcard   # a specific drive
-      # - D:/backups:/mnt/d         # a Windows host folder
+      - /media:/media:rslave          # Linux: USB / SD auto-mount here
+      - /run/media:/run/media:rslave  # (some distros use this instead)
+      - /mnt:/mnt:rslave              # manual mounts, e.g. mount /dev/mmcblk0p1 /mnt/sdcard
+      # - D:/backups:/mnt/d           # a Windows host folder
 ```
+
+The host has to mount the card itself: desktop distros do it automatically via
+udisks2; on a headless server install `udiskie`/`usbmount`, or mount manually
+(`mount /dev/mmcblk0p1 /mnt/sdcard`). If a card is unplugged when a backup
+runs, the backup is spooled locally and synced when the card returns.
 
 Running the app **natively** (not in Docker) on Windows/Linux, it sees your real
 drive letters / mounts directly — no mounting needed.

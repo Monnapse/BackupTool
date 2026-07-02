@@ -8,7 +8,7 @@ import { formatBytes } from "@/lib/format";
 interface Drive {
   path: string;
   label: string;
-  type: "fixed" | "removable" | "mount";
+  type: "fixed" | "removable" | "sdcard" | "mount";
   total: number | null;
   free: number | null;
 }
@@ -22,7 +22,14 @@ interface Listing {
 const DRIVE_ICON: Record<string, string> = {
   fixed: "M4 17h16M4 17a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2M7 12h.01",
   removable: "M6 2h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm3 14h6",
+  // SD card outline with contact pins along the top edge.
+  sdcard: "M8 2h9a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V5l2-3ZM9.5 5v3M12 5v3M14.5 5v3",
   mount: "M3 7l9-4 9 4-9 4-9-4Zm0 5l9 4 9-4",
+};
+
+const DRIVE_TYPE_LABEL: Record<string, string> = {
+  removable: "USB / removable",
+  sdcard: "SD card",
 };
 
 /** Browse the machine's drives/mounts and pick a folder (local destination). */
@@ -115,18 +122,21 @@ export function FolderBrowser({
                 key={d.path}
                 type="button"
                 onClick={() => open(d.path)}
+                title={DRIVE_TYPE_LABEL[d.type] || d.path}
                 className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ${
                   active ? "border-accent bg-accent/10 text-indigo-200" : "border-border bg-surface-2 text-gray-200"
                 }`}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path d={DRIVE_ICON[d.type]} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d={DRIVE_ICON[d.type] || DRIVE_ICON.mount} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <span>
                   <span className="block font-medium">{d.label}</span>
-                  {d.free != null && (
-                    <span className="text-muted">{formatBytes(d.free)} free</span>
-                  )}
+                  <span className="text-muted">
+                    {DRIVE_TYPE_LABEL[d.type] ? `${DRIVE_TYPE_LABEL[d.type]}` : ""}
+                    {DRIVE_TYPE_LABEL[d.type] && d.free != null ? " · " : ""}
+                    {d.free != null ? `${formatBytes(d.free)} free` : ""}
+                  </span>
                 </span>
               </button>
             );

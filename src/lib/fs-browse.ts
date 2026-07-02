@@ -12,7 +12,7 @@ export interface DriveInfo {
   path: string;
   /** Friendly label (drive letter, volume/mount name). */
   label: string;
-  type: "fixed" | "removable" | "mount";
+  type: "fixed" | "removable" | "sdcard" | "mount";
   total: number | null;
   free: number | null;
 }
@@ -98,10 +98,20 @@ function isSystemPath(p: string): boolean {
 // Bare mount-parent dirs — these hold drives, they aren't drives themselves.
 const PARENT_DIRS = new Set(["/media", "/run/media", "/mnt", "/Volumes"]);
 
+/** SD / microSD / eMMC cards get their own kernel device names. A card in a
+ * built-in slot (Pi, laptop reader) is /dev/mmcblk*; cards in USB readers show
+ * as /dev/sd* and are indistinguishable from USB sticks — still detected, just
+ * labelled "removable". */
+function isSdCardDevice(dev: string | undefined): boolean {
+  return !!dev && /^\/dev\/mmcblk/.test(dev);
+}
+
 function listUnixMounts(): DriveInfo[] {
   const out: DriveInfo[] = [];
   const seen = new Set<string>();
   const dataDir = process.env.DATA_DIR; // app's own config dir — not a backup target
+  // Device backing each mountpoint, so the parent-dir scan below can classify too.
+  const devByMount = new Map<string, string>();
 
   const add = (mountPath: string, type: DriveInfo["type"]) => {
     if (seen.has(mountPath) || mountPath === dataDir) return;
@@ -130,8 +140,9 @@ function listUnixMounts(): DriveInfo[] {
       if (dev.startsWith("/dev/") && !fs.existsSync(dev)) continue;
       const mnt = unescapeMount(mntRaw);
       if (isSystemPath(mnt)) continue;
+      devByMount.set(mnt, dev);
       const removable = /^\/(media|mnt|run\/media)\b/.test(mnt);
-      add(mnt, removable ? "removable" : "mount");
+      add(mnt, isSdCardDevice(dev) ? "sdcard" : removable ? "removable" : "mount");
     }
   } catch {
     // not Linux, or no /proc — fall through to scanned roots below
@@ -144,12 +155,15 @@ function listUnixMounts(): DriveInfo[] {
       for (const name of fs.readdirSync(base)) {
         const full = path.join(base, name);
         // /run/media nests one level deeper: /run/media/<user>/<label>
-        if (isMountpoint(full)) add(full, "removable");
-        else if (isDir(full)) {
+        if (isMountpoint(full)) {
+          add(full, isSdCardDevice(devByMount.get(full)) ? "sdcard" : "removable");
+        } else if (isDir(full)) {
           try {
             for (const sub of fs.readdirSync(full)) {
               const subFull = path.join(full, sub);
-              if (isMountpoint(subFull)) add(subFull, "removable");
+              if (isMountpoint(subFull)) {
+                add(subFull, isSdCardDevice(devByMount.get(subFull)) ? "sdcard" : "removable");
+              }
             }
           } catch {
             /* ignore */

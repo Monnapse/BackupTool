@@ -30,18 +30,19 @@ services:
       - ./backups:/backups
 
       # ── Auto-scan drives (Linux host) ──────────────────────────────────────
-      # Mount the parent dir where the host auto-mounts removable drives, with
-      # "rslave" propagation so drives plugged in LATER appear automatically in
-      # the picker — no per-drive config. Most distros use /media or /run/media.
+      # Mount the parent dirs where drives get mounted, with "rslave"
+      # propagation so USB sticks / SD cards / microSD cards plugged in LATER
+      # appear automatically in the picker — no per-drive config. Desktop
+      # distros auto-mount under /media or /run/media; manual mounts usually
+      # live under /mnt.
       - /media:/media:rslave
       - /run/media:/run/media:rslave
+      - /mnt:/mnt:rslave
       #
-      # The host itself must auto-mount the drive (desktop distros do this via
+      # The host itself must mount the card first (desktop distros do this via
       # udisks2; on a headless server install `udiskie` or `usbmount`, or mount
-      # it manually). Plug the SD card into THIS Linux host, not your PC.
-      #
-      # Alternatively, pin specific drives explicitly:
-      #   - /mnt/sdcard:/mnt/sdcard:rslave
+      # it manually, e.g. `mount /dev/mmcblk0p1 /mnt/sdcard`). Plug the card
+      # into THIS Linux host, not your PC.
 
 volumes:
   backuptool-data:
