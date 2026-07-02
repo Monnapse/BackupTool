@@ -19,10 +19,17 @@ Portainer / docker-compose.
 - **Scheduling** with friendly presets or any cron expression.
 - **Rotation**: keep the newest *N* backups per job; older ones are pruned
   automatically. (Your "2 rotating hourly files" idea = `keep 2` + `Hourly`.)
-- **Multiple jobs**, each with its own container, destination, schedule.
+- **Multiple jobs**, each with its own container, schedule, and **one or more
+  destinations** — a single dump fans out to every place you tick (e.g. USB
+  drive *and* Google Drive).
+- **Offline-safe**: if a destination is unreachable when a backup runs (USB
+  unplugged, cloud down), that copy is **kept on the machine and uploaded
+  automatically** the moment the destination comes back — no backup is lost and
+  nothing to do manually. The dashboard shows what's waiting to sync.
 - **Destinations**: local drive (with a built-in **drive/folder picker** that
-  shows each disk & SD card separately), plus Google Drive and Dropbox — all
-  linked from the website, with a live folder picker. No env editing for cloud.
+  shows each disk & SD card separately and updates **live** as you plug/unplug
+  drives), plus Google Drive and Dropbox — all linked from the website, with a
+  live folder picker. No env editing for cloud.
 - **Password-protected** dashboard; stored credentials & tokens are encrypted
   at rest (AES-256-GCM).
 - Runs anywhere Docker does — Linux, Windows, macOS.
@@ -48,8 +55,8 @@ Then:
 1. **Destinations → Add destination** — choose *Local / Drive* and **browse your
    drives** to pick a folder (see below), or link *Google Drive* / *Dropbox*.
 2. **Backup Jobs → New job** — pick a container; type and credentials are
-   auto-filled when detectable. Choose the destination, a schedule, and how many
-   backups to keep. **Run now** to test immediately.
+   auto-filled when detectable. Tick **one or more destinations**, choose a
+   schedule and how many backups to keep. **Run now** to test immediately.
 
 ### Deploying on Portainer
 
@@ -132,10 +139,21 @@ Desktop's daemon exposed) or `//./pipe/docker_engine`.
 
 ## How rotation works
 
-After each successful backup, the destination is listed and only the newest
+After each successful backup, each destination is listed and only the newest
 `keepCount` artifacts are retained — the rest are deleted. Filenames are
 timestamped (`<job>_<YYYY-MM-DD_HH-mm-ss>.sql.gz`), so with `keepCount = 2` and
 an hourly schedule you always hold the two most recent hourly snapshots.
+
+## How offline destinations are handled
+
+Every run dumps the database **once** to local disk, then uploads that file to
+each of the job's destinations. Any destination that fails (drive unplugged,
+cloud unreachable) is skipped — the file stays spooled under `DATA_DIR/spool`
+and a background worker probes the destination every 30 seconds, uploading the
+pending backups (oldest first) as soon as it's reachable again. The run shows as
+**pending sync** until then, and flips to **success** once everything has
+synced. The spool itself is rotated with the same `keepCount`, so a long outage
+can't fill your disk.
 
 ## Security notes
 

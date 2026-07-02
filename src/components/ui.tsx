@@ -27,16 +27,20 @@ export function StatusBadge({ status }: { status: string }) {
     success: "bg-success/15 text-green-300",
     running: "bg-accent/15 text-indigo-300",
     failed: "bg-danger/15 text-red-300",
+    partial: "bg-warn/15 text-amber-300",
   };
   const dot: Record<string, string> = {
     success: "bg-success",
     running: "bg-accent animate-pulse",
     failed: "bg-danger",
+    partial: "bg-warn animate-pulse",
   };
+  // "partial" = backed up, but some destinations are offline and pending sync.
+  const label = status === "partial" ? "pending sync" : status;
   return (
     <span className={`badge ${map[status] || "bg-border text-muted"}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${dot[status] || "bg-muted"}`} />
-      {status}
+      {label}
     </span>
   );
 }

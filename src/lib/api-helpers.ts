@@ -12,7 +12,14 @@ export function parseTargetBody(
   if (!b?.name) throw new Error("name is required");
   if (!b?.containerId) throw new Error("containerId is required");
   if (!KINDS.includes(b.dbKind)) throw new Error("invalid dbKind");
-  if (!b?.destinationId) throw new Error("destinationId is required");
+  // Accept the legacy single-destination shape too.
+  const rawIds: unknown[] = Array.isArray(b.destinationIds)
+    ? b.destinationIds
+    : b.destinationId
+      ? [b.destinationId]
+      : [];
+  const destinationIds = [...new Set(rawIds.map(String).filter(Boolean))];
+  if (destinationIds.length === 0) throw new Error("pick at least one destination");
   if (!cron.validate(b.schedule)) throw new Error("invalid cron schedule");
   const keepCount = Number(b.keepCount);
   if (!Number.isInteger(keepCount) || keepCount < 1) throw new Error("keepCount must be >= 1");
@@ -23,7 +30,7 @@ export function parseTargetBody(
     containerName: String(b.containerName || ""),
     dbKind: b.dbKind,
     config: b.config || {},
-    destinationId: String(b.destinationId),
+    destinationIds,
     schedule: String(b.schedule),
     enabled: b.enabled !== false,
     keepCount,

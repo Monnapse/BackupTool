@@ -4,7 +4,32 @@ import { useEffect, useState } from "react";
 import { api } from "@/components/api";
 import { Modal, Spinner, StatusBadge } from "@/components/ui";
 import { duration, formatBytes, formatDateTime } from "@/lib/format";
-import type { BackupRun } from "@/lib/types";
+import type { BackupRun, DestinationResult } from "@/lib/types";
+
+/** Small chips showing where a run's copies ended up. */
+function ResultChips({ results }: { results: DestinationResult[] }) {
+  if (!results?.length) return null;
+  const style: Record<string, string> = {
+    success: "bg-success/15 text-green-300",
+    synced: "bg-success/15 text-green-300",
+    spooled: "bg-warn/15 text-amber-300",
+    failed: "bg-danger/15 text-red-300",
+  };
+  return (
+    <span className="flex flex-wrap gap-1">
+      {results.map((r) => (
+        <span
+          key={r.destinationId}
+          title={r.error || r.status}
+          className={`rounded px-1.5 py-0.5 text-[10px] ${style[r.status] || "bg-border text-muted"}`}
+        >
+          {r.destinationName}
+          {r.status === "spooled" ? " ⏳" : r.status === "failed" ? " ✕" : " ✓"}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export default function HistoryPage() {
   const [runs, setRuns] = useState<BackupRun[]>([]);
@@ -51,7 +76,10 @@ export default function HistoryPage() {
             <tbody className="divide-y divide-border">
               {runs.map((r) => (
                 <tr key={r.id} className="hover:bg-surface-2/50">
-                  <td className="px-4 py-3 font-medium">{r.targetName}</td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{r.targetName}</p>
+                    <ResultChips results={r.results} />
+                  </td>
                   <td className="px-4 py-3 text-muted">{formatDateTime(r.startedAt)}</td>
                   <td className="px-4 py-3 text-muted">{duration(r.startedAt, r.finishedAt)}</td>
                   <td className="px-4 py-3 text-muted">{formatBytes(r.size)}</td>
@@ -77,6 +105,7 @@ export default function HistoryPage() {
               <span>Size: {formatBytes(selected.size)}</span>
               <span>Status: {selected.status}</span>
             </div>
+            <ResultChips results={selected.results} />
             <pre className="max-h-[50vh] overflow-auto rounded-lg bg-bg p-4 font-mono text-xs leading-relaxed text-gray-300">
               {selected.log || "(no log)"}
             </pre>

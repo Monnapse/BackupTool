@@ -13,9 +13,11 @@ export default function OverviewPage() {
   const [dests, setDests] = useState<Destination[]>([]);
   const [runs, setRuns] = useState<BackupRun[]>([]);
   const [docker, setDocker] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [pendingSync, setPendingSync] = useState(0);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    async function load() {
       try {
         const [t, d, r, s] = await Promise.all([
           api("/api/targets"),
@@ -23,14 +25,22 @@ export default function OverviewPage() {
           api("/api/runs"),
           api("/api/status"),
         ]);
+        if (cancelled) return;
         setTargets(t.targets);
         setDests(d.destinations);
         setRuns(r.runs);
         setDocker(s.docker);
+        setPendingSync(s.pendingSync ?? 0);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    })();
+    }
+    load();
+    const timer = setInterval(load, 10_000); // keep pending-sync + statuses fresh
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
 
   if (loading) {
@@ -63,6 +73,18 @@ export default function OverviewPage() {
         <h1 className="text-2xl font-semibold">Overview</h1>
         <p className="mt-1 text-sm text-muted">Your backup jobs at a glance.</p>
       </div>
+
+      {pendingSync > 0 && (
+        <div className="card border-warn/40 bg-warn/10 p-4 text-sm text-amber-200">
+          <p className="font-medium">
+            {pendingSync} backup{pendingSync === 1 ? "" : "s"} saved locally, waiting to sync
+          </p>
+          <p className="mt-1 text-amber-200/70">
+            A destination is offline (drive unplugged or cloud unreachable). Copies are safe on
+            this machine and upload automatically the moment it's back — nothing to do.
+          </p>
+        </div>
+      )}
 
       {docker && !docker.ok && (
         <div className="card border-danger/40 bg-danger/10 p-4 text-sm text-red-200">

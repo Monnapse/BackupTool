@@ -62,7 +62,8 @@ export default function TargetsPage() {
     load();
   }
 
-  const destName = (id: string) => dests.find((d) => d.id === id)?.name || "—";
+  const destNames = (ids: string[]) =>
+    ids.map((id) => dests.find((d) => d.id === id)?.name || "—").join(", ") || "—";
   const scheduleLabel = (cron: string) =>
     SCHEDULE_PRESETS.find((p) => p.value === cron)?.label || cron;
 
@@ -109,7 +110,7 @@ export default function TargetsPage() {
                     {!t.enabled && <span className="badge bg-border text-muted">paused</span>}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted">
-                    {DB_LABELS[t.dbKind]} · {t.containerName} → {destName(t.destinationId)}
+                    {DB_LABELS[t.dbKind]} · {t.containerName} → {destNames(t.destinationIds)}
                   </p>
                   <p className="mt-1 text-xs text-muted">
                     {scheduleLabel(t.schedule)} · keep {t.keepCount} · {run ? `last ${relativeTime(run.startedAt)}` : "never run"}
@@ -176,7 +177,9 @@ function JobEditor({
   const [containerId, setContainerId] = useState(target?.containerId || "");
   const [containerName, setContainerName] = useState(target?.containerName || "");
   const [dbKind, setDbKind] = useState<DbKind>(target?.dbKind || "postgres");
-  const [destinationId, setDestinationId] = useState(target?.destinationId || dests[0]?.id || "");
+  const [destinationIds, setDestinationIds] = useState<string[]>(
+    target?.destinationIds || (dests[0] ? [dests[0].id] : [])
+  );
   const [schedule, setSchedule] = useState(target?.schedule || "0 * * * *");
   const [keepCount, setKeepCount] = useState(target?.keepCount ?? 2);
   const [cfg, setCfg] = useState<Record<string, any>>(
@@ -215,7 +218,7 @@ function JobEditor({
         containerName,
         dbKind,
         config,
-        destinationId,
+        destinationIds,
         schedule,
         keepCount: Number(keepCount),
         enabled: target?.enabled ?? true,
@@ -270,12 +273,29 @@ function JobEditor({
             </select>
           </div>
           <div>
-            <label className="label">Destination</label>
-            <select className="input" value={destinationId} onChange={(e) => setDestinationId(e.target.value)}>
+            <label className="label">Save to (pick one or more)</label>
+            <div className="max-h-36 space-y-1 overflow-auto rounded-lg border border-border bg-surface-2 p-2">
               {dests.map((d) => (
-                <option key={d.id} value={d.id}>{d.name} ({DEST_LABELS[d.kind] || d.kind})</option>
+                <label key={d.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-border">
+                  <input
+                    type="checkbox"
+                    className="accent-indigo-500"
+                    checked={destinationIds.includes(d.id)}
+                    onChange={(e) =>
+                      setDestinationIds((ids) =>
+                        e.target.checked ? [...ids, d.id] : ids.filter((x) => x !== d.id)
+                      )
+                    }
+                  />
+                  <span className="truncate">{d.name}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted">{DEST_LABELS[d.kind] || d.kind}</span>
+                </label>
               ))}
-            </select>
+            </div>
+            <p className="mt-1.5 text-xs text-muted">
+              If a destination is offline (USB unplugged, cloud down), that copy is kept on this
+              machine and synced automatically when it's back.
+            </p>
           </div>
         </div>
 
@@ -362,7 +382,7 @@ function JobEditor({
           <button
             className="btn-primary"
             onClick={save}
-            disabled={saving || !name || !containerId || !destinationId}
+            disabled={saving || !name || !containerId || destinationIds.length === 0}
           >
             {saving ? <Spinner /> : editingExisting ? "Save changes" : "Create job"}
           </button>

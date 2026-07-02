@@ -5,7 +5,10 @@ import type {
   BackupRun,
   BackupTarget,
   Destination,
+  DestinationResult,
+  DestResultStatus,
   RunStatus,
+  SpoolItem,
   TargetConfig,
 } from "./types";
 
@@ -31,7 +34,9 @@ function rowToTarget(r: any): BackupTarget {
     containerName: r.container_name,
     dbKind: r.db_kind,
     config: decodeTargetConfig(r.config),
-    destinationId: r.destination_id,
+    destinationIds: r.destination_ids
+      ? JSON.parse(r.destination_ids)
+      : [r.destination_id].filter(Boolean),
     schedule: r.schedule,
     enabled: !!r.enabled,
     keepCount: r.keep_count,
@@ -58,12 +63,13 @@ export function createTarget(
     .prepare(
       `INSERT INTO targets
         (id, name, container_id, container_name, db_kind, config, destination_id,
-         schedule, enabled, keep_count, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+         destination_ids, schedule, enabled, keep_count, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     )
     .run(
       id, t.name, t.containerId, t.containerName, t.dbKind,
-      encodeTargetConfig(t.config), t.destinationId, t.schedule,
+      encodeTargetConfig(t.config), t.destinationIds[0] || "",
+      JSON.stringify(t.destinationIds), t.schedule,
       t.enabled ? 1 : 0, t.keepCount, ts, ts
     );
   return getTarget(id)!;
@@ -78,12 +84,14 @@ export function updateTarget(
   db()
     .prepare(
       `UPDATE targets SET name=?, container_id=?, container_name=?, db_kind=?,
-        config=?, destination_id=?, schedule=?, enabled=?, keep_count=?, updated_at=?
+        config=?, destination_id=?, destination_ids=?, schedule=?, enabled=?,
+        keep_count=?, updated_at=?
        WHERE id=?`
     )
     .run(
       t.name, t.containerId, t.containerName, t.dbKind,
-      encodeTargetConfig(t.config), t.destinationId, t.schedule,
+      encodeTargetConfig(t.config), t.destinationIds[0] || "",
+      JSON.stringify(t.destinationIds), t.schedule,
       t.enabled ? 1 : 0, t.keepCount, now(), id
     );
   return getTarget(id);
@@ -163,14 +171,16 @@ function rowToRun(r: any): BackupRun {
     finishedAt: r.finished_at,
     size: r.size,
     artifact: r.artifact,
-    destinationId: r.destination_id,
+    results: r.results ? JSON.parse(r.results) : [],
     trigger: r.trigger,
     log: r.log,
   };
 }
 
 export function createRun(
-  r: Pick<BackupRun, "targetId" | "targetName" | "destinationId" | "trigger">
+  r: Pick<BackupRun, "targetId" | "targetName" | "trigger"> & {
+    destinationIds: string[];
+  }
 ): BackupRun {
   const id = newId();
   db()
@@ -179,20 +189,50 @@ export function createRun(
         destination_id, trigger, log)
        VALUES (?,?,?,?,?,?,?,'')`
     )
-    .run(id, r.targetId, r.targetName, "running", now(), r.destinationId, r.trigger);
-  return db().prepare("SELECT * FROM runs WHERE id = ?").get(id) as any;
+    .run(id, r.targetId, r.targetName, "running", now(), r.destinationIds[0] || "", r.trigger);
+  return rowToRun(db().prepare("SELECT * FROM runs WHERE id = ?").get(id));
 }
 
 export function finishRun(
   id: string,
   status: RunStatus,
-  fields: { size?: number; artifact?: string; log: string }
+  fields: { size?: number; artifact?: string; results?: DestinationResult[]; log: string }
 ): void {
   db()
     .prepare(
-      "UPDATE runs SET status=?, finished_at=?, size=?, artifact=?, log=? WHERE id=?"
+      "UPDATE runs SET status=?, finished_at=?, size=?, artifact=?, results=?, log=? WHERE id=?"
     )
-    .run(status, now(), fields.size ?? null, fields.artifact ?? null, fields.log, id);
+    .run(
+      status, now(), fields.size ?? null, fields.artifact ?? null,
+      JSON.stringify(fields.results ?? []), fields.log, id
+    );
+}
+
+/**
+ * Update one destination's outcome on a finished run (spool worker calling
+ * home after a catch-up sync). When nothing is left spooled or failed the
+ * run itself flips to success.
+ */
+export function updateRunResult(
+  runId: string,
+  destinationId: string,
+  status: DestResultStatus,
+  logLine?: string
+): void {
+  const r: any = db().prepare("SELECT * FROM runs WHERE id = ?").get(runId);
+  if (!r) return;
+  const results: DestinationResult[] = r.results ? JSON.parse(r.results) : [];
+  const entry = results.find((x) => x.destinationId === destinationId);
+  if (!entry) return;
+  entry.status = status;
+  if (status === "synced") delete entry.error;
+
+  const allOk = results.every((x) => x.status === "success" || x.status === "synced");
+  const newStatus: RunStatus = r.status === "running" ? r.status : allOk ? "success" : r.status;
+  const log = logLine ? `${r.log}\n[${new Date().toISOString()}] ${logLine}` : r.log;
+  db()
+    .prepare("UPDATE runs SET results=?, status=?, log=? WHERE id=?")
+    .run(JSON.stringify(results), newStatus, log, runId);
 }
 
 export function listRuns(limit = 100): BackupRun[] {
@@ -207,4 +247,72 @@ export function listRunsForTarget(targetId: string, limit = 50): BackupRun[] {
     .prepare("SELECT * FROM runs WHERE target_id=? ORDER BY started_at DESC LIMIT ?")
     .all(targetId, limit)
     .map(rowToRun);
+}
+
+// ── Spool ──────────────────────────────────────────────────────────────────
+// Backups parked on local disk because their destination was unreachable.
+
+function rowToSpool(r: any): SpoolItem {
+  return {
+    id: r.id,
+    runId: r.run_id,
+    targetId: r.target_id,
+    destinationId: r.destination_id,
+    filename: r.filename,
+    path: r.path,
+    size: r.size,
+    createdAt: r.created_at,
+    attempts: r.attempts,
+    lastError: r.last_error,
+    lastAttemptAt: r.last_attempt_at,
+  };
+}
+
+export function createSpoolItem(
+  s: Pick<SpoolItem, "runId" | "targetId" | "destinationId" | "filename" | "path" | "size"> & {
+    lastError?: string;
+  }
+): SpoolItem {
+  const id = newId();
+  db()
+    .prepare(
+      `INSERT INTO spool (id, run_id, target_id, destination_id, filename, path,
+        size, created_at, attempts, last_error)
+       VALUES (?,?,?,?,?,?,?,?,0,?)`
+    )
+    .run(id, s.runId, s.targetId, s.destinationId, s.filename, s.path, s.size, now(), s.lastError ?? null);
+  return rowToSpool(db().prepare("SELECT * FROM spool WHERE id = ?").get(id));
+}
+
+/** Oldest first, so catch-up uploads happen in the order backups were taken. */
+export function listSpool(): SpoolItem[] {
+  return db().prepare("SELECT * FROM spool ORDER BY created_at ASC").all().map(rowToSpool);
+}
+
+export function listSpoolForPair(targetId: string, destinationId: string): SpoolItem[] {
+  return db()
+    .prepare("SELECT * FROM spool WHERE target_id=? AND destination_id=? ORDER BY created_at ASC")
+    .all(targetId, destinationId)
+    .map(rowToSpool);
+}
+
+export function countSpool(): number {
+  const r: any = db().prepare("SELECT COUNT(*) AS n FROM spool").get();
+  return r.n;
+}
+
+export function deleteSpoolItem(id: string): void {
+  db().prepare("DELETE FROM spool WHERE id = ?").run(id);
+}
+
+export function markSpoolAttempt(id: string, error: string): void {
+  db()
+    .prepare("UPDATE spool SET attempts = attempts + 1, last_error=?, last_attempt_at=? WHERE id=?")
+    .run(error.slice(0, 2000), now(), id);
+}
+
+/** How many spool rows still reference a staged file (shared when several destinations failed). */
+export function countSpoolByPath(path: string): number {
+  const r: any = db().prepare("SELECT COUNT(*) AS n FROM spool WHERE path = ?").get(path);
+  return r.n;
 }

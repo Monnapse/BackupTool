@@ -62,5 +62,35 @@ function migrate(d: Database.Database) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_runs_target ON runs(target_id, started_at DESC);
+
+    -- Backups saved locally because a destination was offline; the spool
+    -- worker retries them until the destination is reachable again.
+    CREATE TABLE IF NOT EXISTS spool (
+      id              TEXT PRIMARY KEY,
+      run_id          TEXT NOT NULL,
+      target_id       TEXT NOT NULL,
+      destination_id  TEXT NOT NULL,
+      filename        TEXT NOT NULL,
+      path            TEXT NOT NULL,
+      size            INTEGER NOT NULL,
+      created_at      INTEGER NOT NULL,
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      last_error      TEXT,
+      last_attempt_at INTEGER
+    );
   `);
+
+  // Column migrations for databases created before multi-destination support.
+  if (!hasColumn(d, "targets", "destination_ids")) {
+    d.exec(`ALTER TABLE targets ADD COLUMN destination_ids TEXT`);
+    d.exec(`UPDATE targets SET destination_ids = json_array(destination_id) WHERE destination_ids IS NULL`);
+  }
+  if (!hasColumn(d, "runs", "results")) {
+    d.exec(`ALTER TABLE runs ADD COLUMN results TEXT`);
+  }
+}
+
+function hasColumn(d: Database.Database, table: string, col: string): boolean {
+  const rows = d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return rows.some((r) => r.name === col);
 }
