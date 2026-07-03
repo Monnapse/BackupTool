@@ -73,27 +73,51 @@ slot (e.g. a Raspberry Pi or laptop reader) are detected as such and shown with
 an SD-card icon; cards in a USB reader appear as removable drives. Either way
 they work identically.
 
-The catch with Docker: a container only sees drives that are **mounted into it**.
-The bundled `docker-compose.yml` already mounts the three places Linux puts
-drives — `/media`, `/run/media` (auto-mounted USB/SD), and `/mnt` (manual
-mounts) — with `rslave` propagation, so anything you plug in later appears
-automatically:
+**BackupTool mounts removable drives itself.** Headless servers don't
+auto-mount anything when you plug in a card — so the app watches the kernel's
+block-device list and, when a removable device with a filesystem appears
+unmounted, mounts it automatically under `/mnt/auto/<label>` within a few
+seconds. Yank the card and it's unmounted again. No udisks2/udiskie needed on
+the host. (Turn it off with `AUTOMOUNT=0`.)
+
+This needs the mount privileges already present in the bundled
+`docker-compose.yml` — if you started from an older compose file, make sure it
+has all of these:
 
 ```yaml
+    cap_add:
+      - SYS_ADMIN            # permission to mount filesystems
+    security_opt:
+      - apparmor:unconfined  # Docker's default AppArmor profile blocks mount
+    device_cgroup_rules:
+      - "b *:* rmw"          # access to hot-plugged block devices
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - backuptool-data:/data
       - ./backups:/backups
-      - /media:/media:rslave          # Linux: USB / SD auto-mount here
-      - /run/media:/run/media:rslave  # (some distros use this instead)
-      - /mnt:/mnt:rslave              # manual mounts, e.g. mount /dev/mmcblk0p1 /mnt/sdcard
-      # - D:/backups:/mnt/d           # a Windows host folder
+      - /media:/media:rslave          # host-auto-mounted drives (desktop distros)
+      - /run/media:/run/media:rslave
+      - /mnt:/mnt:rslave              # manual mounts
+      - /dev:/dev                     # device nodes for the automounter
 ```
 
-The host has to mount the card itself: desktop distros do it automatically via
-udisks2; on a headless server install `udiskie`/`usbmount`, or mount manually
-(`mount /dev/mmcblk0p1 /mnt/sdcard`). If a card is unplugged when a backup
-runs, the backup is spooled locally and synced when the card returns.
+Drives the host mounts on its own (desktop distros via udisks2, manual
+`mount` commands) still show up too — the automounter only touches devices
+nothing else has mounted. If a card is unplugged when a backup runs, the
+backup is spooled locally and synced when the card returns.
+
+### SD card / USB stick doesn't show up?
+
+- **Check the picker for an amber warning.** If the device was detected but
+  couldn't be mounted, the picker says so and why (e.g. missing privileges →
+  redeploy with the compose settings above; exFAT card → the host kernel needs
+  the exfat module: `sudo modprobe exfat`).
+- **Redeploy the stack** after updating `docker-compose.yml` — the caps,
+  `/dev`, and mount folders only apply on container (re)creation.
+- On the host, `lsblk -f` shows whether Linux sees the card at all and whether
+  it has a filesystem. No filesystem → format it first (e.g.
+  `mkfs.vfat /dev/mmcblk0p1`).
+- Plug the card into the **Linux machine running the stack**, not your PC.
 
 Running the app **natively** (not in Docker) on Windows/Linux, it sees your real
 drive letters / mounts directly — no mounting needed.

@@ -7,5 +7,7 @@ export async function register() {
     startScheduler();
     const { startSpoolWorker } = await import("./lib/backup/spool");
     startSpoolWorker();
+    const { startAutomount } = await import("./lib/automount");
+    startAutomount();
   }
 }

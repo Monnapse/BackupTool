@@ -18,6 +18,11 @@ interface Listing {
   writable: boolean;
   dirs: { name: string; path: string }[];
 }
+interface BlockedDevice {
+  device: string;
+  label: string | null;
+  reason: string;
+}
 
 const DRIVE_ICON: Record<string, string> = {
   fixed: "M4 17h16M4 17a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2M7 12h.01",
@@ -41,6 +46,7 @@ export function FolderBrowser({
   onChange: (path: string, writable: boolean) => void;
 }) {
   const [drives, setDrives] = useState<Drive[]>([]);
+  const [blocked, setBlocked] = useState<BlockedDevice[]>([]);
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -52,6 +58,7 @@ export function FolderBrowser({
       try {
         const d = await api("/api/fs/drives");
         setDrives(d.drives);
+        setBlocked(d.blocked || []);
         if (value) await open(value);
       } catch (e: any) {
         setError(e.message);
@@ -68,6 +75,7 @@ export function FolderBrowser({
       try {
         const d = await api("/api/fs/drives");
         setDrives(d.drives);
+        setBlocked(d.blocked || []);
       } catch {
         /* ignore transient errors */
       }
@@ -143,6 +151,13 @@ export function FolderBrowser({
           })}
           {drives.length === 0 && <p className="text-xs text-muted">No drives detected.</p>}
         </div>
+        {blocked.map((b) => (
+          <p key={b.device} className="mt-2 text-xs text-amber-300">
+            ⚠ Found <span className="font-mono">{b.label || b.device}</span>
+            {b.label ? <span className="font-mono text-amber-300/60"> ({b.device})</span> : null}
+            {" "}but couldn't mount it: {b.reason}
+          </p>
+        ))}
       </div>
 
       {listing && (

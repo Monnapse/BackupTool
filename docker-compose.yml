@@ -5,6 +5,18 @@ services:
     # image: ghcr.io/youruser/backuptool:latest
     container_name: backuptool
     restart: unless-stopped
+
+    # ── Built-in automount (headless hosts) ─────────────────────────────────
+    # Servers don't auto-mount USB sticks / SD cards like desktops do. With
+    # these three settings BackupTool mounts removable drives itself the
+    # moment they're plugged in — nothing to install on the host.
+    # (Set AUTOMOUNT=0 in the environment to turn the behaviour off.)
+    cap_add:
+      - SYS_ADMIN            # permission to mount filesystems
+    security_opt:
+      - apparmor:unconfined  # Docker's default AppArmor profile blocks mount
+    device_cgroup_rules:
+      - "b *:* rmw"          # access to hot-plugged block devices
     # Change the port by setting PORT in your .env (default 8723).
     ports:
       - "${PORT:-8723}:${PORT:-8723}"
@@ -38,11 +50,13 @@ services:
       - /media:/media:rslave
       - /run/media:/run/media:rslave
       - /mnt:/mnt:rslave
+      # Device nodes, so the built-in automounter can see hot-plugged
+      # USB sticks and SD cards and mount them itself.
+      - /dev:/dev
       #
-      # The host itself must mount the card first (desktop distros do this via
-      # udisks2; on a headless server install `udiskie` or `usbmount`, or mount
-      # it manually, e.g. `mount /dev/mmcblk0p1 /mnt/sdcard`). Plug the card
-      # into THIS Linux host, not your PC.
+      # Plug the card into THIS Linux host, not your PC. If the host already
+      # auto-mounts drives (desktop distros via udisks2), that still works too
+      # — the automounter only touches drives nothing else has mounted.
 
 volumes:
   backuptool-data:
